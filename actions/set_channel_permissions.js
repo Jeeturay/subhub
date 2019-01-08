@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Wait",
+name: "Set Channel Permissions",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -14,7 +14,7 @@ name: "Wait",
 // This is the section the action will fall into.
 //---------------------------------------------------------------------
 
-section: "Other Stuff",
+section: "Channel Control",
 
 //---------------------------------------------------------------------
 // Action Subtitle
@@ -23,8 +23,9 @@ section: "Other Stuff",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const measurements = ['Miliseconds', 'Seconds', 'Minutes', 'Hours'];
-	return `${data.time} ${measurements[parseInt(data.measurement)]}`;
+	const names = ['Same Channel', 'Mentioned Channel', '1st Server Channel', 'Temp Variable', 'Server Variable', 'Global Variable'];
+	const index = parseInt(data.storage);
+	return parseInt(data.storage) < 3 ? `${names[index]}` : `${names[index]} - ${data.varName}`;
 },
 
 //---------------------------------------------------------------------
@@ -35,7 +36,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["time", "measurement"],
+fields: ["storage", "varName", "permission", "state"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -56,18 +57,30 @@ fields: ["time", "measurement"],
 html: function(isEvent, data) {
 	return `
 <div>
-	<div style="float: left; width: 45%;">
-		Measurement:<br>
-		<select id="measurement" class="round">
-			<option value="0">Miliseconds</option>
-			<option value="1" selected>Seconds</option>
-			<option value="2">Minutes</option>
-			<option value="3">Hours</option>
+	<div style="float: left; width: 35%;">
+		Source Channel:<br>
+		<select id="storage" class="round" onchange="glob.channelChange(this, 'varNameContainer')">
+			${data.channels[isEvent ? 1 : 0]}
 		</select>
 	</div>
-	<div style="float: right; width: 50%;">
-		Amount:<br>
-		<input id="time" class="round" type="text">
+	<div id="varNameContainer" style="display: none; float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName" class="round" type="text" list="variableList"><br>
+	</div>
+</div><br><br><br>
+<div style="padding-top: 8px;">
+	<div style="float: left; width: 45%;">
+		Permission:<br>
+		<select id="permission" class="round">
+			${data.permissions[0]}
+		</select>
+	</div>
+	<div style="padding-left: 5%; float: left; width: 55%;">
+		Change To:<br>
+		<select id="state" class="round">
+			<option value="0" selected>Allow</option>
+			<option value="1">Disallow</option>
+		</select>
 	</div>
 </div>`
 },
@@ -81,6 +94,9 @@ html: function(isEvent, data) {
 //---------------------------------------------------------------------
 
 init: function() {
+	const {glob, document} = this;
+
+	glob.channelChange(document.getElementById('storage'), 'varNameContainer');
 },
 
 //---------------------------------------------------------------------
@@ -93,23 +109,22 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const time = parseInt(this.evalMessage(data.time, cache));
-	const type = parseInt(data.measurement);
-	switch(type) {
-		case 0:
-			setTimeout(this.callNextAction.bind(this, cache), time);
-			break;
-		case 1:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000);
-			break;
-		case 2:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60);
-			break;
-		case 3:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60 * 60);
-			break;
-		default:
+	const server = cache.server;
+	if(!server) {
+		this.callNextAction(cache);
+		return;
+	}
+	const storage = parseInt(data.storage);
+	const varName = this.evalMessage(data.varName, cache);
+	const channel = this.getChannel(storage, varName, cache);
+	const options = {};
+	options[data.permission] = Boolean(data.state === "0");
+	if(channel && channel.overwritePermissions) {
+		channel.overwritePermissions(server.id, options).then(function() {
 			this.callNextAction(cache);
+		}.bind(this)).catch(this.displayError.bind(this, data, cache));
+	} else {
+		this.callNextAction(cache);
 	}
 },
 

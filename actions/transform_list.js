@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Wait",
+name: "Transform List",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -14,7 +14,7 @@ name: "Wait",
 // This is the section the action will fall into.
 //---------------------------------------------------------------------
 
-section: "Other Stuff",
+section: "Lists and Loops",
 
 //---------------------------------------------------------------------
 // Action Subtitle
@@ -23,8 +23,20 @@ section: "Other Stuff",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const measurements = ['Miliseconds', 'Seconds', 'Minutes', 'Hours'];
-	return `${data.time} ${measurements[parseInt(data.measurement)]}`;
+	const list = ['Server Members', 'Server Channels', 'Server Roles', 'Server Emojis', 'All Bot Servers', 'Mentioned User Roles', 'Command Author Roles', 'Temp Variable', 'Server Variable', 'Global Variable'];
+	return `Transform ${list[parseInt(data.list)]}`;
+},
+
+//---------------------------------------------------------------------
+// Action Storage Function
+//
+// Stores the relevant variable info for the editor.
+//---------------------------------------------------------------------
+
+variableStorage: function(data, varType) {
+	const type = parseInt(data.storage);
+	if(type !== varType) return;
+	return ([data.varName2, 'List']);
 },
 
 //---------------------------------------------------------------------
@@ -35,7 +47,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["time", "measurement"],
+fields: ["list", "varName", "transform", "null", "storage", "varName2"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -56,18 +68,37 @@ fields: ["time", "measurement"],
 html: function(isEvent, data) {
 	return `
 <div>
-	<div style="float: left; width: 45%;">
-		Measurement:<br>
-		<select id="measurement" class="round">
-			<option value="0">Miliseconds</option>
-			<option value="1" selected>Seconds</option>
-			<option value="2">Minutes</option>
-			<option value="3">Hours</option>
+	<div style="float: left; width: 35%;">
+		Source List:<br>
+		<select id="list" class="round" onchange="glob.listChange(this, 'varNameContainer')">
+			${data.lists[isEvent ? 1 : 0]}
 		</select>
 	</div>
-	<div style="float: right; width: 50%;">
-		Amount:<br>
-		<input id="time" class="round" type="text">
+	<div id="varNameContainer" style="display: none; float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName" class="round" type="text" list="variableList">
+	</div>
+</div><br><br><br><br>
+<div style="display: table; width: 100%;">
+	<div style="display: table-cell;">
+		Transform Eval:
+		<input id="transform" class="round" type="text" name="is-eval" value="item">
+	</div>
+	<div style="display: table-cell;">
+		Null Value:
+		<input id="null" class="round" type="text" name="is-eval">
+	</div>
+</div><br>
+<div style="padding-top: 8px;">
+	<div style="float: left; width: 35%;">
+		Store In:<br>
+		<select id="storage" class="round">
+			${data.variables[1]}
+		</select>
+	</div>
+	<div id="varNameContainer2" style="float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName2" class="round" type="text">
 	</div>
 </div>`
 },
@@ -81,6 +112,9 @@ html: function(isEvent, data) {
 //---------------------------------------------------------------------
 
 init: function() {
+	const {glob, document} = this;
+
+	glob.listChange(document.getElementById('list'), 'varNameContainer');
 },
 
 //---------------------------------------------------------------------
@@ -93,24 +127,46 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const time = parseInt(this.evalMessage(data.time, cache));
-	const type = parseInt(data.measurement);
-	switch(type) {
-		case 0:
-			setTimeout(this.callNextAction.bind(this, cache), time);
-			break;
-		case 1:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000);
-			break;
-		case 2:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60);
-			break;
-		case 3:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60 * 60);
-			break;
-		default:
-			this.callNextAction(cache);
+	const storage = parseInt(data.list);
+	const varName = this.evalMessage(data.varName, cache);
+	const list = this.getList(storage, varName, cache);
+
+	let result = [];
+	const code = this.evalMessage(data.transform, cache);
+	const nullVal = this.evalMessage(data.null, cache);
+	let defaultVal;
+
+	try {
+		defaultVal = eval(nullVal);
+	} catch(e) {
+		this.displayError(data, cache, e);
+		defaultVal = '';
 	}
+
+	for(let i = 0; i < list.length; i++) {
+		const item = list[i];
+		try {
+			const val = eval(code);
+			if(val) {
+				result.push(val);
+			} else if(defaultVal) {
+				result.push(defaultVal);
+			}
+		} catch(e) {
+			this.displayError(data, cache, e);
+			if(defaultVal) {
+				result.push(defaultVal);
+			}
+		}
+	}
+
+	if(result) {
+		const varName2 = this.evalMessage(data.varName2, cache);
+		const storage2 = parseInt(data.storage);
+		this.storeValue(result, storage2, varName2, cache);
+	}
+
+	this.callNextAction(cache);
 },
 
 //---------------------------------------------------------------------

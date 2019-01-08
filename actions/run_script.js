@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Wait",
+name: "Run Script",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -23,8 +23,19 @@ section: "Other Stuff",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const measurements = ['Miliseconds', 'Seconds', 'Minutes', 'Hours'];
-	return `${data.time} ${measurements[parseInt(data.measurement)]}`;
+	return `${data.code}`;
+},
+
+//---------------------------------------------------------------------
+// Action Storage Function
+//
+// Stores the relevant variable info for the editor.
+//---------------------------------------------------------------------
+
+variableStorage: function(data, varType) {
+	const type = parseInt(data.storage);
+	if(type !== varType) return;
+	return ([data.varName, 'Unknown Type']);
 },
 
 //---------------------------------------------------------------------
@@ -35,7 +46,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["time", "measurement"],
+fields: ["behavior", "interpretation", "code", "storage", "varName"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -57,17 +68,34 @@ html: function(isEvent, data) {
 	return `
 <div>
 	<div style="float: left; width: 45%;">
-		Measurement:<br>
-		<select id="measurement" class="round">
-			<option value="0">Miliseconds</option>
-			<option value="1" selected>Seconds</option>
-			<option value="2">Minutes</option>
-			<option value="3">Hours</option>
+		End Behavior:<br>
+		<select id="behavior" class="round">
+			<option value="0" selected>Call Next Action Automatically</option>
+			<option value="1">Do Not Call Next Action</option>
 		</select>
 	</div>
-	<div style="float: right; width: 50%;">
-		Amount:<br>
-		<input id="time" class="round" type="text">
+	<div style="padding-left: 5%; float: left; width: 55%;">
+		Interpretation Style:<br>
+		<select id="interpretation" class="round">
+			<option value="0" selected>Evaluate Text First</option>
+			<option value="1">Evaluate Text Directly</option>
+		</select>
+	</div>
+</div><br><br><br>
+<div style="padding-top: 8px;">
+	Custom Code:<br>
+	<textarea id="code" rows="9" name="is-eval" style="width: 99%; white-space: nowrap; resize: none;"></textarea>
+</div><br>
+<div>
+	<div style="float: left; width: 35%;">
+		Store In:<br>
+		<select id="storage" class="round" onchange="glob.variableChange(this, 'varNameContainer')">
+			${data.variables[0]}
+		</select>
+	</div>
+	<div id="varNameContainer" style="display: none; float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName" class="round" type="text">
 	</div>
 </div>`
 },
@@ -81,6 +109,9 @@ html: function(isEvent, data) {
 //---------------------------------------------------------------------
 
 init: function() {
+	const {glob, document} = this;
+
+	glob.variableChange(document.getElementById('storage'), 'varNameContainer');
 },
 
 //---------------------------------------------------------------------
@@ -93,23 +124,18 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const time = parseInt(this.evalMessage(data.time, cache));
-	const type = parseInt(data.measurement);
-	switch(type) {
-		case 0:
-			setTimeout(this.callNextAction.bind(this, cache), time);
-			break;
-		case 1:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000);
-			break;
-		case 2:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60);
-			break;
-		case 3:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60 * 60);
-			break;
-		default:
-			this.callNextAction(cache);
+	let code;
+	if(data.interpretation === "0") {
+		code = this.evalMessage(data.code, cache);
+	} else {
+		code = data.code;
+	}
+	const result = this.eval(code, cache);
+	const varName = this.evalMessage(data.varName, cache);
+	const storage = parseInt(data.storage);
+	this.storeValue(result, storage, varName, cache);
+	if(data.behavior === "0") {
+		this.callNextAction(cache);
 	}
 },
 

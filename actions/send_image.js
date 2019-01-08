@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Wait",
+name: "Send Image",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -14,7 +14,7 @@ name: "Wait",
 // This is the section the action will fall into.
 //---------------------------------------------------------------------
 
-section: "Other Stuff",
+section: "Image Editing",
 
 //---------------------------------------------------------------------
 // Action Subtitle
@@ -23,8 +23,8 @@ section: "Other Stuff",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const measurements = ['Miliseconds', 'Seconds', 'Minutes', 'Hours'];
-	return `${data.time} ${measurements[parseInt(data.measurement)]}`;
+	const channels = ['Same Channel', 'Command Author', 'Mentioned User', 'Mentioned Channel', 'Default Channel', 'Temp Variable', 'Server Variable', 'Global Variable'];
+	return `${channels[parseInt(data.channel)]}`;
 },
 
 //---------------------------------------------------------------------
@@ -35,7 +35,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["time", "measurement"],
+fields: ["storage", "varName", "channel", "varName2", "message"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -56,19 +56,32 @@ fields: ["time", "measurement"],
 html: function(isEvent, data) {
 	return `
 <div>
-	<div style="float: left; width: 45%;">
-		Measurement:<br>
-		<select id="measurement" class="round">
-			<option value="0">Miliseconds</option>
-			<option value="1" selected>Seconds</option>
-			<option value="2">Minutes</option>
-			<option value="3">Hours</option>
+	<div style="float: left; width: 35%;">
+		Source Image:<br>
+		<select id="storage" class="round" onchange="glob.refreshVariableList(this)">
+			${data.variables[1]}
 		</select>
 	</div>
-	<div style="float: right; width: 50%;">
-		Amount:<br>
-		<input id="time" class="round" type="text">
+	<div id="varNameContainer" style="float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName" class="round" type="text" list="variableList"><br>
 	</div>
+</div><br><br><br>
+<div style="padding-top: 8px;">
+	<div style="float: left; width: 35%;">
+		Send To:<br>
+		<select id="channel" class="round" onchange="glob.sendTargetChange(this, 'varNameContainer2')">
+			${data.sendTargets[isEvent ? 1 : 0]}
+		</select>
+	</div>
+	<div id="varNameContainer2" style="display: none; float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName2" class="round" type="text"><br>
+	</div>
+</div><br><br><br>
+<div style="padding-top: 8px;">
+	Message:<br>
+	<textarea id="message" rows="8" placeholder="Insert message here..." style="width: 99%; font-family: monospace; white-space: nowrap; resize: none;"></textarea>
 </div>`
 },
 
@@ -81,6 +94,10 @@ html: function(isEvent, data) {
 //---------------------------------------------------------------------
 
 init: function() {
+	const {glob, document} = this;
+
+	glob.refreshVariableList(document.getElementById('storage'));
+	glob.sendTargetChange(document.getElementById('channel'), 'varNameContainer2');
 },
 
 //---------------------------------------------------------------------
@@ -93,23 +110,32 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const time = parseInt(this.evalMessage(data.time, cache));
-	const type = parseInt(data.measurement);
-	switch(type) {
-		case 0:
-			setTimeout(this.callNextAction.bind(this, cache), time);
-			break;
-		case 1:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000);
-			break;
-		case 2:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60);
-			break;
-		case 3:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60 * 60);
-			break;
-		default:
-			this.callNextAction(cache);
+	const storage = parseInt(data.storage);
+	const varName = this.evalMessage(data.varName, cache);
+	const image = this.getVariable(storage, varName, cache);
+	if(!image) {
+		this.callNextAction(cache);
+		return;
+	}
+	const channel = parseInt(data.channel);
+	const varName2 = this.evalMessage(data.varName2, cache);
+	const target = this.getSendTarget(channel, varName2, cache);
+	if(target && target.send) {
+		const Images = this.getDBM().Images;
+		Images.createBuffer(image).then(function(buffer) {
+			target.send(this.evalMessage(data.message, cache), {
+				files: [
+					{
+						attachment: buffer,
+						name: 'image.png'
+					}
+				]
+			}).then(function() {
+				this.callNextAction(cache);
+			}.bind(this)).catch(this.displayError.bind(this, data, cache));
+		}.bind(this)).catch(this.displayError.bind(this, data, cache));
+	} else {
+		this.callNextAction(cache);
 	}
 },
 

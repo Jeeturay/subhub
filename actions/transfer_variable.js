@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Wait",
+name: "Transfer Variable",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -23,8 +23,28 @@ section: "Other Stuff",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const measurements = ['Miliseconds', 'Seconds', 'Minutes', 'Hours'];
-	return `${data.time} ${measurements[parseInt(data.measurement)]}`;
+	const storeTypes = ["", "Temp Variable", "Server Variable", "Global Variable"];
+	return `${storeTypes[parseInt(data.storage)]} (${data.varName}) -> ${storeTypes[parseInt(data.storage2)]} (${data.varName2})`;
+},
+
+//---------------------------------------------------------------------
+// Action Storage Function
+//
+// Stores the relevant variable info for the editor.
+//---------------------------------------------------------------------
+
+variableStorage: function(data, varType) {
+	const type = parseInt(data.storage2);
+	if(type !== varType) return;
+	let assumeType = 'Unknown Type';
+	if(type === parseInt(data.storage)) {
+		for(let i = 0; i < tracker.length; i++) {
+			if(tracker[i] && tracker[i][0] === data.varName) {
+				assumeType = tracker[i][1];
+			}
+		}
+	}
+	return ([data.varName2, assumeType]);
 },
 
 //---------------------------------------------------------------------
@@ -35,7 +55,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["time", "measurement"],
+fields: ["storage", "varName", "storage2", "varName2"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -56,18 +76,27 @@ fields: ["time", "measurement"],
 html: function(isEvent, data) {
 	return `
 <div>
-	<div style="float: left; width: 45%;">
-		Measurement:<br>
-		<select id="measurement" class="round">
-			<option value="0">Miliseconds</option>
-			<option value="1" selected>Seconds</option>
-			<option value="2">Minutes</option>
-			<option value="3">Hours</option>
+	<div style="float: left; width: 35%;">
+		Transfer Value From:<br>
+		<select id="storage" class="round" onchange="glob.refreshVariableList(this)">
+			${data.variables[1]}
 		</select>
 	</div>
-	<div style="float: right; width: 50%;">
-		Amount:<br>
-		<input id="time" class="round" type="text">
+	<div id="varNameContainer" style="float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName" class="round" type="text" list="variableList"><br>
+	</div>
+</div><br><br><br>
+<div style="padding-top: 8px;">
+	<div style="float: left; width: 35%;">
+		Transfer Value To:<br>
+		<select id="storage2" class="round">
+			${data.variables[1]}
+		</select>
+	</div>
+	<div id="varNameContainer2" style="float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName2" class="round" type="text"><br>
 	</div>
 </div>`
 },
@@ -93,24 +122,22 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const time = parseInt(this.evalMessage(data.time, cache));
-	const type = parseInt(data.measurement);
-	switch(type) {
-		case 0:
-			setTimeout(this.callNextAction.bind(this, cache), time);
-			break;
-		case 1:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000);
-			break;
-		case 2:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60);
-			break;
-		case 3:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60 * 60);
-			break;
-		default:
-			this.callNextAction(cache);
+	const storage = parseInt(data.storage);
+	const varName = this.evalMessage(data.varName, cache);
+	const var1 = this.getVariable(storage, varName, cache);
+	if(!var1) {
+		this.callNextAction(cache);
+		return;
 	}
+	const storage2 = parseInt(data.storage2);
+	const varName2 = this.evalMessage(data.varName2, cache);
+	const var2 = this.getVariable(storage2, varName2, cache);
+	if(!var2) {
+		this.callNextAction(cache);
+		return;
+	}
+	this.storeValue(var2, storage, varName, cache);
+	this.callNextAction(cache);
 },
 
 //---------------------------------------------------------------------

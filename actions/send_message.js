@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Wait",
+name: "Send Message",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -14,7 +14,7 @@ name: "Wait",
 // This is the section the action will fall into.
 //---------------------------------------------------------------------
 
-section: "Other Stuff",
+section: "Messaging",
 
 //---------------------------------------------------------------------
 // Action Subtitle
@@ -23,8 +23,20 @@ section: "Other Stuff",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const measurements = ['Miliseconds', 'Seconds', 'Minutes', 'Hours'];
-	return `${data.time} ${measurements[parseInt(data.measurement)]}`;
+	const channels = ['Same Channel', 'Command Author', 'Mentioned User', 'Mentioned Channel', 'Default Channel', 'Temp Variable', 'Server Variable', 'Global Variable'];
+	return `${channels[parseInt(data.channel)]}: "${data.message.replace(/[\n\r]+/, '')}"`;
+},
+
+//---------------------------------------------------------------------
+// Action Storage Function
+//
+// Stores the relevant variable info for the editor.
+//---------------------------------------------------------------------
+
+variableStorage: function(data, varType) {
+	const type = parseInt(data.storage);
+	if(type !== varType) return;
+	return ([data.varName2, 'Message']);
 },
 
 //---------------------------------------------------------------------
@@ -35,7 +47,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["time", "measurement"],
+fields: ["channel", "varName", "message", "storage", "varName2"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -56,20 +68,33 @@ fields: ["time", "measurement"],
 html: function(isEvent, data) {
 	return `
 <div>
-	<div style="float: left; width: 45%;">
-		Measurement:<br>
-		<select id="measurement" class="round">
-			<option value="0">Miliseconds</option>
-			<option value="1" selected>Seconds</option>
-			<option value="2">Minutes</option>
-			<option value="3">Hours</option>
+	<div style="float: left; width: 35%;">
+		Send To:<br>
+		<select id="channel" class="round" onchange="glob.sendTargetChange(this, 'varNameContainer')">
+			${data.sendTargets[isEvent ? 1 : 0]}
 		</select>
 	</div>
-	<div style="float: right; width: 50%;">
-		Amount:<br>
-		<input id="time" class="round" type="text">
+	<div id="varNameContainer" style="display: none; float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName" class="round" type="text" list="variableList"><br>
 	</div>
-</div>`
+</div><br><br><br>
+<div style="padding-top: 8px;">
+	Message:<br>
+	<textarea id="message" rows="9" placeholder="Insert message here..." style="width: 99%; font-family: monospace; white-space: nowrap; resize: none;"></textarea>
+</div><br>
+<div>
+	<div style="float: left; width: 35%;">
+		Store In:<br>
+		<select id="storage" class="round" onchange="glob.variableChange(this, 'varNameContainer2')">
+			${data.variables[0]}
+		</select>
+	</div>
+	<div id="varNameContainer2" style="display: none; float: right; width: 60%;">
+		Variable Name:<br>
+		<input id="varName2" class="round" type="text">
+	</div>
+</div>`;
 },
 
 //---------------------------------------------------------------------
@@ -81,6 +106,10 @@ html: function(isEvent, data) {
 //---------------------------------------------------------------------
 
 init: function() {
+	const {glob, document} = this;
+
+	glob.sendTargetChange(document.getElementById('channel'), 'varNameContainer');
+	glob.variableChange(document.getElementById('storage'), 'varNameContainer2');
 },
 
 //---------------------------------------------------------------------
@@ -93,23 +122,22 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const time = parseInt(this.evalMessage(data.time, cache));
-	const type = parseInt(data.measurement);
-	switch(type) {
-		case 0:
-			setTimeout(this.callNextAction.bind(this, cache), time);
-			break;
-		case 1:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000);
-			break;
-		case 2:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60);
-			break;
-		case 3:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60 * 60);
-			break;
-		default:
+	const server = cache.server;
+	const msg = cache.msg;
+	const channel = parseInt(data.channel);
+	const message = data.message;
+	if(channel === undefined || message === undefined) return;
+	const varName = this.evalMessage(data.varName, cache);
+	const target = this.getSendTarget(channel, varName, cache);
+	if(target && target.send) {
+		target.send(this.evalMessage(message, cache)).then(function(resultMsg) {
+			const varName2 = this.evalMessage(data.varName2, cache);
+			const storage = parseInt(data.storage);
+			this.storeValue(resultMsg, storage, varName2, cache);
 			this.callNextAction(cache);
+		}.bind(this)).catch(this.displayError.bind(this, data, cache));
+	} else {
+		this.callNextAction(cache);
 	}
 },
 

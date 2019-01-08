@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Wait",
+name: "Rotate Image",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -14,7 +14,7 @@ name: "Wait",
 // This is the section the action will fall into.
 //---------------------------------------------------------------------
 
-section: "Other Stuff",
+section: "Image Editing",
 
 //---------------------------------------------------------------------
 // Action Subtitle
@@ -23,8 +23,9 @@ section: "Other Stuff",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const measurements = ['Miliseconds', 'Seconds', 'Minutes', 'Hours'];
-	return `${data.time} ${measurements[parseInt(data.measurement)]}`;
+	const storeTypes = ["", "Temp Variable", "Server Variable", "Global Variable"];
+	const mirror = ["No Mirror", "Horizontal Mirror", "Vertical Mirror", "Diagonal Mirror"];
+	return `${storeTypes[parseInt(data.storage)]} (${data.varName}) -> [${mirror[parseInt(data.mirror)]} ~ ${data.rotation}°]`;
 },
 
 //---------------------------------------------------------------------
@@ -35,7 +36,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["time", "measurement"],
+fields: ["storage", "varName", "rotation", "mirror"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -57,17 +58,29 @@ html: function(isEvent, data) {
 	return `
 <div>
 	<div style="float: left; width: 45%;">
-		Measurement:<br>
-		<select id="measurement" class="round">
-			<option value="0">Miliseconds</option>
-			<option value="1" selected>Seconds</option>
-			<option value="2">Minutes</option>
-			<option value="3">Hours</option>
+		Source Image:<br>
+		<select id="storage" class="round" onchange="glob.refreshVariableList(this)">
+			${data.variables[1]}
 		</select>
 	</div>
+	<div id="varNameContainer" style="float: right; width: 50%;">
+		Variable Name:<br>
+		<input id="varName" class="round" type="text" list="variableList"><br>
+	</div>
+</div><br><br><br>
+<div style="padding-top: 8px;">
+	<div style="float: left; width: 45%;">
+		Mirror:<br>
+		<select id="mirror" class="round">
+			<option value="0" selected>None</option>
+			<option value="1">Horizontal Mirror</option>
+			<option value="2">Vertical Mirror</option>
+			<option value="3">Diagonal Mirror</option>
+		</select><br>
+	</div>
 	<div style="float: right; width: 50%;">
-		Amount:<br>
-		<input id="time" class="round" type="text">
+		Rotation (degrees):<br>
+		<input id="rotation" class="round" type="text" value="0"><br>
 	</div>
 </div>`
 },
@@ -81,6 +94,9 @@ html: function(isEvent, data) {
 //---------------------------------------------------------------------
 
 init: function() {
+	const {glob, document} = this;
+
+	glob.refreshVariableList(document.getElementById('storage'));
 },
 
 //---------------------------------------------------------------------
@@ -93,24 +109,31 @@ init: function() {
 
 action: function(cache) {
 	const data = cache.actions[cache.index];
-	const time = parseInt(this.evalMessage(data.time, cache));
-	const type = parseInt(data.measurement);
-	switch(type) {
+	const storage = parseInt(data.storage);
+	const varName = this.evalMessage(data.varName, cache);
+	const image = this.getVariable(storage, varName, cache);
+	if(!image) {
+		this.callNextAction(cache);
+		return;
+	}
+	const mirror = parseInt(data.mirror);
+	switch(mirror) {
 		case 0:
-			setTimeout(this.callNextAction.bind(this, cache), time);
+			image.mirror(false, false);
 			break;
 		case 1:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000);
+			image.mirror(true, false);
 			break;
 		case 2:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60);
+			image.mirror(false, true);
 			break;
 		case 3:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60 * 60);
+			image.mirror(true, true);
 			break;
-		default:
-			this.callNextAction(cache);
 	}
+	const rotation = parseInt(data.rotation);
+	image.rotate(rotation);
+	this.callNextAction(cache);
 },
 
 //---------------------------------------------------------------------

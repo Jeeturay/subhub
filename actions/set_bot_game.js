@@ -6,7 +6,7 @@ module.exports = {
 // This is the name of the action displayed in the editor.
 //---------------------------------------------------------------------
 
-name: "Wait",
+name: "Set Bot Game",
 
 //---------------------------------------------------------------------
 // Action Section
@@ -14,7 +14,7 @@ name: "Wait",
 // This is the section the action will fall into.
 //---------------------------------------------------------------------
 
-section: "Other Stuff",
+section: "Bot Client Control",
 
 //---------------------------------------------------------------------
 // Action Subtitle
@@ -23,8 +23,7 @@ section: "Other Stuff",
 //---------------------------------------------------------------------
 
 subtitle: function(data) {
-	const measurements = ['Miliseconds', 'Seconds', 'Minutes', 'Hours'];
-	return `${data.time} ${measurements[parseInt(data.measurement)]}`;
+	return `${data.gameName}${data.gameLink ? ' [' + data.gameLink + ']' : ''}`;
 },
 
 //---------------------------------------------------------------------
@@ -35,7 +34,7 @@ subtitle: function(data) {
 // are also the names of the fields stored in the action's JSON data.
 //---------------------------------------------------------------------
 
-fields: ["time", "measurement"],
+fields: ["gameName", "gameLink"],
 
 //---------------------------------------------------------------------
 // Command HTML
@@ -55,21 +54,15 @@ fields: ["time", "measurement"],
 
 html: function(isEvent, data) {
 	return `
-<div>
-	<div style="float: left; width: 45%;">
-		Measurement:<br>
-		<select id="measurement" class="round">
-			<option value="0">Miliseconds</option>
-			<option value="1" selected>Seconds</option>
-			<option value="2">Minutes</option>
-			<option value="3">Hours</option>
-		</select>
-	</div>
-	<div style="float: right; width: 50%;">
-		Amount:<br>
-		<input id="time" class="round" type="text">
-	</div>
-</div>`
+<div style="width: 90%;">
+	Game Name:<br>
+	<input id="gameName" class="round" type="text">
+</div><br>
+<div style="width: 90%;">
+	Twitch Stream Link:<br>
+	<input id="gameLink" class="round" type="text" placeholder="Leave blank to disallow!">
+</div>
+`
 },
 
 //---------------------------------------------------------------------
@@ -92,24 +85,22 @@ init: function() {
 //---------------------------------------------------------------------
 
 action: function(cache) {
+	const botClient = this.getDBM().Bot.bot.user;
 	const data = cache.actions[cache.index];
-	const time = parseInt(this.evalMessage(data.time, cache));
-	const type = parseInt(data.measurement);
-	switch(type) {
-		case 0:
-			setTimeout(this.callNextAction.bind(this, cache), time);
-			break;
-		case 1:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000);
-			break;
-		case 2:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60);
-			break;
-		case 3:
-			setTimeout(this.callNextAction.bind(this, cache), time * 1000 * 60 * 60);
-			break;
-		default:
-			this.callNextAction(cache);
+	const game = this.evalMessage(data.gameName, cache);
+	const link = this.evalMessage(data.gameLink, cache);
+	if(botClient && botClient.setPresence) {
+		if(link) {
+			botClient.setPresence({ game: { name: game, type: 0, url: link } }).then(function() {
+				this.callNextAction(cache);
+			}.bind(this)).catch(this.displayError.bind(this, data, cache));
+		} else {
+			botClient.setPresence({ game: { name: game, type: 0 } }).then(function() {
+				this.callNextAction(cache);
+			}.bind(this)).catch(this.displayError.bind(this, data, cache));
+		}
+	} else {
+		this.callNextAction(cache);
 	}
 },
 
